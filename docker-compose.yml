@@ -1,0 +1,55 @@
+version: "26.1.1"
+
+services:
+  db:
+    container_name: postgres
+    image: postgres:16
+    restart: always
+    ports:
+      - 5433:5433
+    volumes:
+      # - ./data/db:/var/lib/postgresql/data
+      - ./postgres/data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=Mshahab74
+      - POSTGRES_DB=main_db
+    
+  backend:
+    container_name: backend
+    image: djano-main
+    restart: always
+    build: .
+    # command: bash -c "python manage.py makemigrations && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    command: bash -c "python manage.py makemigrations && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn core.wsgi --bind 0.0.0.0:8000"
+    # command: gunicorn core.wsgi --bind 0.0.0.0:9000
+    volumes:
+      - ./core:/app
+      - static_volume:/app/static
+      - media_volume:/app/media
+    expose:
+      - "8000"
+    # ports:
+    #   - "9000:9000"
+    # environment:
+    #   - name=value
+    depends_on:
+      - db
+
+  nginx:
+    image: nginx
+    container_name: nginx
+    restart: always
+    ports: 
+      - "80:80"
+    depends_on:
+      - db
+      - backend
+    volumes:
+      - ./default.conf:/etc/nginx/conf.d/default.conf
+      - static_volume:/home/app/static
+      - media_volume:/home/app/media
+
+volumes:
+  static_volume:
+  media_volume:
