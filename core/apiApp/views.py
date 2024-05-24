@@ -187,6 +187,7 @@ def scrapeTagAddress(request):
 
     try:
         if 'link_url' in request.data and 'tag_address' in request.data:
+            # print("salam")
             output = {}
             output['OK'] = True
             output['Link Url'] = request.data['link_url']
