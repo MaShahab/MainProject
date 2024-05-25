@@ -8,6 +8,7 @@ from rest_framework import generics
 from rest_framework import status
 import sys
 import re
+import socket
 
 from drf_yasg import openapi
 
@@ -153,30 +154,39 @@ class WhiteIPApiView(APIView):
 
 
 
+def checkIPValidation(ip):
+    ips_objects = White_IPs.objects.all()
+    ips_array = []
+    for value in ips_objects:
+        ips_array.append(value.ip)
+
+    if ip in ips_array: 
+        return True 
+    else: 
+        return False
+
+
+
+
 def requestScraping(input_parameters):
 
     link_url = input_parameters['link_url']
     tag_address = input_parameters['tag_address']
-
-    # return tag_address
 
     headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
     r = requests.get(link_url, headers=headers)
     soup = BeautifulSoup(r.text, 'html.parser')
     element_instance = soup.select(tag_address)
-        
-    global final_value
+    # return str(element_instance)
 
     if len(element_instance) == 1:
-        final_value = element_instance[0].text.strip()
+        return str(element_instance[0].text.strip())
     elif len(element_instance) > 1:
         value_list = []
         for value in element_instance:
             value_list.append(value.text.strip())
-        final_value = value_list
-
-    return(final_value)
+        return value_list
 
     
 
@@ -187,7 +197,6 @@ def scrapeTagAddress(request):
 
     try:
         if 'link_url' in request.data and 'tag_address' in request.data:
-            # print("salam")
             output = {}
             output['OK'] = True
             output['Link Url'] = request.data['link_url']
@@ -201,4 +210,37 @@ def scrapeTagAddress(request):
             return Response({"Error":"Could not find input tag address in input web url."}, status=status.HTTP_404_NOT_FOUND)
             # return Response({"Error":str(e)})
 
+@swagger_auto_schema(request_body=MyQueryParamSerializer, method='post')
+@api_view(http_method_names=['POST'])
+@permission_classes([IsAuthenticated])
+def multipleRequestScraping(request):
+    # hostname = socket.gethostname()
+    # IPAddr = socket.gethostbyname(hostname)
+    # return Response(checkIPValidation("195.248.242.169"))
+    try:
+        hostname = socket.gethostname()
+        IPAddr = socket.gethostbyname(hostname)
+        if checkIPValidation(IPAddr) == False:
+            inputs = request.data['inputs']
+            parameters_list = []
+            for parameter in inputs:
+                output = {}
+                if 'link_url' in parameter and 'tag_address' in parameter:
+                    output['OK'] = True
+                    output['Link Url'] = parameter['link_url']
+                    output['Tag Address'] = parameter['tag_address']
+                    output['Result'] = requestScraping(parameter)
+                else:
+                    output['OK'] = False
+                    output['parameter'] = parameter
+                    output['error'] = "Both parameters (link_url & tag_address) must be passed as inputs"
+                parameters_list.append(output)
 
+            return Response(parameters_list)
+        elif checkIPValidation(IPAddr) == True:
+            return Response({"response": "You don't have permission to call this method"})
+    
+    except Exception as e:
+            return Response({"Error":"Could not find input tag address in input web url."}, status=status.HTTP_404_NOT_FOUND)
+            # return Response({"Error":str(e)})
+            
