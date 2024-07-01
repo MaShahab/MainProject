@@ -29,6 +29,9 @@ from .serializers import MyQueryParamSerializer
 from rest_framework import mixins, viewsets
 
 
+from collections import ChainMap
+
+
 
 
 import requests
@@ -43,11 +46,12 @@ import itertools
 
 # from selenium import webdriver
 # from selenium.webdriver.edge.options import Options
-from msedge.selenium_tools import EdgeOptions
-from msedge.selenium_tools import Edge
+# from msedge.selenium_tools import EdgeOptions
+# from msedge.selenium_tools import Edge
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException
 
 import pandas as pd
 
@@ -244,3 +248,306 @@ def multipleRequestScraping(request):
             return Response({"Error":"Could not find input tag address in input web url."}, status=status.HTTP_404_NOT_FOUND)
             # return Response({"Error":str(e)})
             
+
+
+def split_list(alist, wanted_parts=1):
+    length = len(alist)
+    return [ alist[i*length // wanted_parts: (i+1)*length // wanted_parts] 
+             for i in range(wanted_parts) ]
+
+def merge_dicts(dicts_array):
+    return dict(ChainMap(*dicts_array))
+
+
+
+
+
+def scrapeMultiDataWithSelenium(request,input_data):
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service as ChromeService
+        from webdriver_manager.chrome import ChromeDriverManager
+        from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+        from selenium_stealth import stealth
+        import undetected_chromedriver as uc
+
+        import os
+
+        chrome_options = Options()
+        # chrome_options.add_argument('--no-sandbox')
+        # chrome_options.add_argument('--headless')
+        # chrome_options.add_argument('--disable-dev-shm-usage')
+        # chrome_options.add_argument("--headless=new")
+        # chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        # chrome_options.add_argument('start-maximized')
+        # os.environ['WDM_SSL_VERIFY'] = '0' #Disable SSL
+
+        chrome_options.add_argument('--no-sandbox')
+        # chrome_options.add_argument('start-maximized')
+        chrome_options.add_argument('enable-automation')
+        chrome_options.add_argument('--disable-infobars')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-browser-side-navigation')
+        chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument("--log-level=3")
+        chrome_options.add_argument("--user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/96.0.4664.110 Safari/537.36")
+        
+
+        driver = webdriver.Remote(command_executor='http://chrome:4444/wd/hub',desired_capabilities=DesiredCapabilities.CHROME,options=chrome_options)
+
+        url = input_data['link_url']
+        driver.get(url)
+
+        if 'click_items' in input_data:
+            click_items = input_data['click_items']
+            for click_item in click_items:
+                element_to_click = driver.find_element(By.CSS_SELECTOR, click_item)
+                print(element_to_click.text)
+                element_to_click.click()
+
+
+        html = driver.page_source
+        soup = BeautifulSoup(html)
+
+        if 'link_url' in input_data and 'tag_addresses' in input_data:
+            link_url = input_data['link_url']
+            tag_addresses = input_data['tag_addresses']
+
+            final_values_list = []
+            response = {}
+
+            for tag_addresse in tag_addresses:
+                # value = []
+                value = {}
+                element_instance = soup.select(tag_addresse)
+
+                if len(element_instance) == 1:
+                    value[tag_addresse] = str(element_instance[0].text.strip())
+                elif len(element_instance) > 1:
+                    value_list = []
+                    for elemnent in element_instance:
+                        value_list.append(elemnent.text.strip())
+                    value[tag_addresse] = value_list
+                    # value = value_list
+
+                else:
+                    value[tag_addresse] = "Null"
+
+                final_values_list.append(value)
+            # return Response(final_values_list)
+            
+            merged_values_dict = merge_dicts(final_values_list)
+
+            # return Response(final_values_list)
+            response['values'] = merged_values_dict
+        else:
+            return Response({"error":"Both parameters (link_url & tag_address) must be passed as inputs"})
+        
+        if 'attributes' in input_data:
+            attributes = request.data['attributes']
+            attributes_keys = list(attributes.keys())
+
+            # print(attributes_keys)
+
+            my_list = []
+            a = []
+            b = []
+            final_attr_values = []
+            global x
+
+            my_dict = {}
+            for attribute_key in attributes_keys:
+                spc_attribute_parameters = request.data['attributes'][attribute_key]
+
+                
+                for spc_attribute_parameter in spc_attribute_parameters:
+                    final_attr_values.append(spc_attribute_parameter)
+                    try:
+                        my_value = soup.select_one(attribute_key)[spc_attribute_parameter]
+                        # print(my_value.text.strip())
+                        b.append({spc_attribute_parameter:my_value})
+                    except:
+                        b.append({spc_attribute_parameter:"Null"})
+                my_value = []
+                a.append(attribute_key)
+                a.append(b)
+                b = []
+                final_attr_values = []
+
+            
+
+
+
+
+            z = int(len(a))/2
+            z = int(z)
+            h = split_list(a, wanted_parts=z)
+
+            z_dict = {}
+            for l in h:
+                super_dict = {key:val for d in l[1] for key,val in d.items()}
+                z_dict[l[0]] = super_dict
+
+            response['attributes'] = z_dict
+
+        # return Response(vv)
+        driver.quit()
+        return Response(response)
+
+        
+
+       
+    except Exception as e:
+            # return Response({"Error":"Could not find input tag address in input web url."}, status=status.HTTP_404_NOT_FOUND)
+            driver.quit()
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            return Response({"Error":str(e) + 'in line ' + str(exc_tb.tb_lineno)})
+
+    # options = webdriver.ChromeOptions()
+    # options.add_argument('--headless')  # example
+    # driver = webdriver.Remote("http://127.0.0.1:4444", options=options)
+
+    # sleep(5)
+    # driver = webdriver.Remote(command_executor='http://127.0.0.1:4444/',desired_capabilities=DesiredCapabilities.CHROME)
+
+
+    # print(input_data['link_url'])
+    # a = input_data['link_url']
+    # return a
+
+    # edge_options = EdgeOptions()
+    # edge_options.use_chromium = True
+    # driver = Edge(executable_path='D:/pythonProjects/edgedriver_win64/msedgedriver.exe', options=edge_options)
+    # driver.get(link)
+
+    # timeout = 2
+    # try:
+    #     element_present = EC.presence_of_element_located((By.ID, 'obituariesResults'))
+    #     WebDriverWait(driver, timeout).until(element_present)
+    #     obituaries = driver.find_elements_by_class_name("obit-result-container.component.screen-title.screen-title-split-left")
+    # except TimeoutException:
+    #         print("Timed out waiting for page to load")
+    
+
+
+
+@api_view(http_method_names=['POST'])
+# @permission_classes([IsAuthenticated])
+def scrapeMultiData(request):
+    try:
+        global value
+        hostname = socket.gethostname()
+        IPAddr = socket.gethostbyname(hostname)
+        if checkIPValidation(IPAddr) == False:
+            input_data = request.data
+
+            # r2 = requests.get('www.localhost:4444/')
+            # b_soup2 = BeautifulSoup(r2.text, 'html.parser')
+            # chrome_driver_ip2 = b_soup2.find("div",{"class":"MuiGrid-root"})
+            # print(chrome_driver_ip2)
+            # r2.close()
+
+            if 'is_selenium' not in input_data or input_data['is_selenium'] == 'false':
+
+                if 'link_url' in input_data and 'tag_addresses' in input_data:
+                    link_url = input_data['link_url']
+                    tag_addresses = input_data['tag_addresses']
+                    headers = {
+                            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
+                    r = requests.get(link_url, headers=headers)
+                    soup = BeautifulSoup(r.text, 'html.parser')
+
+                    final_values_list = []
+                    response = {}
+
+                    for tag_addresse in tag_addresses:
+                        # value = []
+                        value = {}
+                        element_instance = soup.select(tag_addresse)
+
+                        if len(element_instance) == 1:
+                            value[tag_addresse] = str(element_instance[0].text.strip())
+                        elif len(element_instance) > 1:
+                            value_list = []
+                            for elemnent in element_instance:
+                                value_list.append(elemnent.text.strip())
+                            value[tag_addresse] = value_list
+                            # value = value_list
+
+                        else:
+                            value[tag_addresse] = "Null"
+
+                        final_values_list.append(value)
+                    # return Response(final_values_list)
+                    
+                    merged_values_dict = merge_dicts(final_values_list)
+
+                    # return Response(final_values_list)
+                    response['values'] = merged_values_dict
+                else:
+                    return Response({"error":"Both parameters (link_url & tag_address) must be passed as inputs"})
+                
+                if 'attributes' in input_data:
+                    attributes = request.data['attributes']
+                    attributes_keys = list(attributes.keys())
+
+                    my_list = []
+                    a = []
+                    b = []
+                    final_attr_values = []
+                    global x
+
+                    my_dict = {}
+                    for attribute_key in attributes_keys:
+                        spc_attribute_parameters = request.data['attributes'][attribute_key]
+                        
+                        for spc_attribute_parameter in spc_attribute_parameters:
+                            final_attr_values.append(spc_attribute_parameter)
+                            try:
+                                my_value = soup.select_one(attribute_key)[spc_attribute_parameter]
+                                b.append({spc_attribute_parameter:my_value})
+                            except:
+                                b.append({spc_attribute_parameter:"Null"})
+                        my_value = []
+                        a.append(attribute_key)
+                        a.append(b)
+                        b = []
+                        final_attr_values = []
+
+
+
+
+                    z = int(len(a))/2
+                    z = int(z)
+                    h = split_list(a, wanted_parts=z)
+
+                    z_dict = {}
+                    for l in h:
+                        super_dict = {key:val for d in l[1] for key,val in d.items()}
+                        z_dict[l[0]] = super_dict
+
+                    response['attributes'] = z_dict
+
+                # return Response(vv)
+                return Response(response)     
+            
+
+            elif input_data['is_selenium'] == 'true':
+                bb = scrapeMultiDataWithSelenium(request,input_data)
+                # print(bb)
+                # return Response({"response": bb})
+                return bb
+
+
+        elif checkIPValidation(IPAddr) == True:
+            return Response({"response": "You don't have permission to call this method"})
+        
+
+    except Exception as e:
+            # return Response({"Error":"Could not find input tag address in input web url."}, status=status.HTTP_404_NOT_FOUND)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            return Response({"Error":str(e) + " in line "+ str(exc_tb.tb_lineno)})
+
+

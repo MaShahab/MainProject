@@ -21,7 +21,7 @@ services:
     restart: always
     build: .
     # command: bash -c "python manage.py makemigrations && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
-    command: bash -c "python manage.py makemigrations && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn core.wsgi --bind 0.0.0.0:8000"
+    command: bash -c "python manage.py makemigrations && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn core.wsgi --bind 0.0.0.0:8000 --timeout 90 --workers=3 --threads=3"
     # command: gunicorn core.wsgi --bind 0.0.0.0:9000
     volumes:
       - ./core:/app
@@ -35,6 +35,21 @@ services:
     #   - name=value
     depends_on:
       - db
+
+  chrome:
+    image: selenium/standalone-chrome:latest
+    # restart: always
+    privileged: true
+    hostname: chrome
+    shm_size: 2g
+
+    ports:
+      - 4444:4444
+      - 5900:5900
+    depends_on:
+      - backend
+    environment:
+    - SE_VNC_NO_PASSWORD= true
 
   nginx:
     image: nginx
